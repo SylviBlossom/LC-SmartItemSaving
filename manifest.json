@@ -1,8 +1,8 @@
 {
-    "name": "TemplateMod",
+    "name": "SmartItemSaving",
     "version_number": "1.0.0",
-    "website_url": "",
-    "description": "A mod for Lethal Company",
+    "website_url": "https://github.com/SylviBlossom/LC-SmartItemSaving",
+    "description": "Improves how items on the ship save, helping against ID changes",
     "dependencies": [
         "BepInEx-BepInExPack-5.4.2100"
     ]

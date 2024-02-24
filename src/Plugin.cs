@@ -1,12 +1,10 @@
 ﻿using BepInEx;
 using BepInEx.Logging;
-using HarmonyLib;
 using Mono.Cecil.Cil;
 using MonoMod.Cil;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using UnityEngine;
 
 namespace SmartItemSaving;
 
@@ -32,14 +30,15 @@ public class Plugin : BaseUnityPlugin
 		Config = new(base.Config);
 		Logger = base.Logger;
 
-		Harmony.CreateAndPatchAll(typeof(Plugin), PluginInfo.PLUGIN_GUID);
+		IL.GameNetworkManager.SaveItemsInShip += GameNetworkManager_SaveItemsOnShip;
+
+		On.StartOfRound.LoadShipGrabbableItems += StartOfRound_LoadShipGrabbableItems;
+		IL.StartOfRound.LoadShipGrabbableItems += StartOfRound_LoadShipGrabbableItems_IL;
 
 		// Plugin startup logic
 		Logger.LogInfo($"Plugin {PluginInfo.PLUGIN_NAME} is loaded!");
 	}
 
-	[HarmonyILManipulator]
-	[HarmonyPatch(typeof(GameNetworkManager), "SaveItemsInShip")]
 	private static void GameNetworkManager_SaveItemsOnShip(ILContext il)
 	{
 		var cursor = new ILCursor(il);
@@ -151,19 +150,17 @@ public class Plugin : BaseUnityPlugin
 		});
 	}
 
-	[HarmonyPrefix]
-	[HarmonyPatch(typeof(StartOfRound), "LoadShipGrabbableItems")]
-	private static void StartOfRound_LoadShipGrabbableItems_Prefix()
+	private void StartOfRound_LoadShipGrabbableItems(On.StartOfRound.orig_LoadShipGrabbableItems orig, StartOfRound self)
 	{
 		if (Config.BackupOnLoad.Value)
 		{
 			Logger.LogInfo("Creating save backup");
 			ES3.CreateBackup(GameNetworkManager.Instance.currentSaveFileName);
 		}
+
+		orig(self);
 	}
 
-	[HarmonyILManipulator]
-	[HarmonyPatch(typeof(StartOfRound), "LoadShipGrabbableItems")]
 	private static void StartOfRound_LoadShipGrabbableItems_IL(ILContext il)
 	{
 		var cursor = new ILCursor(il);

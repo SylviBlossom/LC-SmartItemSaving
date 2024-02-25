@@ -5,21 +5,28 @@ using MonoMod.Cil;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Object = UnityEngine.Object;
 
 namespace SmartItemSaving;
 
 [BepInPlugin(PluginInfo.PLUGIN_GUID, PluginInfo.PLUGIN_NAME, PluginInfo.PLUGIN_VERSION)]
 public class Plugin : BaseUnityPlugin
 {
-	public const int FormatVersion = 0;
+	// Constant variables
+	public const int FormatVersion = 1;
 
 	public const string SaveKey_FormatVersion = $"{PluginInfo.PLUGIN_GUID}_formatVersion";
+	public const string SaveKey_ParityStepsTaken = $"{PluginInfo.PLUGIN_GUID}_parityStepsTaken";
+
 	public const string SaveKey_ItemNames = $"{PluginInfo.PLUGIN_GUID}_itemNames";
 	public const string SaveKey_ItemHasValue = $"{PluginInfo.PLUGIN_GUID}_itemHasValue";
 	public const string SaveKey_ItemHasData = $"{PluginInfo.PLUGIN_GUID}_itemHasData";
-	public const string SaveKey_ItemIDsCopy = $"{PluginInfo.PLUGIN_GUID}_itemIDsCopy";
-	public const string SaveKey_ValueTotal = $"{PluginInfo.PLUGIN_GUID}_itemValueTotal";
 
+	// Temporary loading variables
+	public static int LoadedFormatVersion = 0;
+	public static bool LoadedParityCheck = false;
+
+	// Plugin variables
 	public static Plugin Instance { get; private set; }
 	public static new Config Config { get; private set; }
 	public static new ManualLogSource Logger { get; private set; }
@@ -30,13 +37,56 @@ public class Plugin : BaseUnityPlugin
 		Config = new(base.Config);
 		Logger = base.Logger;
 
+		// Saving
+		IL.GameNetworkManager.SaveGameValues += GameNetworkManager_SaveGameValues;
 		IL.GameNetworkManager.SaveItemsInShip += GameNetworkManager_SaveItemsOnShip;
 
-		On.StartOfRound.LoadShipGrabbableItems += StartOfRound_LoadShipGrabbableItems;
-		IL.StartOfRound.LoadShipGrabbableItems += StartOfRound_LoadShipGrabbableItems_IL;
+		// Loading
+		On.StartOfRound.SetTimeAndPlanetToSavedSettings += StartOfRound_SetTimeAndPlanetToSavedSettings;
+		IL.StartOfRound.LoadShipGrabbableItems += StartOfRound_LoadShipGrabbableItems;
 
-		// Plugin startup logic
 		Logger.LogInfo($"Plugin {PluginInfo.PLUGIN_NAME} is loaded!");
+	}
+
+	private void GameNetworkManager_SaveGameValues(ILContext il)
+	{
+		var cursor = new ILCursor(il);
+
+		var startOfRoundLoc = -1;
+
+		for (var i = 0; i < 3; i++)
+		{
+			if (!cursor.TryGotoNext(MoveType.After,
+					instr1 => instr1.MatchCallOrCallvirt<Object>("FindObjectOfType"),
+					instr2 => instr2.MatchStloc(out startOfRoundLoc)))
+			{
+				Logger.LogError($"Failed IL hook for GameNetworkManager.SaveGameValues @ Get FindObjectOfType local {i}");
+				return;
+			}
+		}
+
+		if (!cursor.TryGotoNext(MoveType.After, instr => instr.MatchBrfalse(out _)))
+		{
+			Logger.LogError($"Failed IL hook for GameNetworkManager.SaveGameValues @ StartOfRound save block");
+			return;
+		}
+
+		// diff:
+		//		...
+		//		StartOfRound startOfRound = Object.FindObjectOfType<StartOfRound>();
+		//		if (startOfRound != null)
+		//		{
+		//	+		MyDelegate(startOfRound);
+		//			...
+
+		cursor.MoveAfterLabels();
+		cursor.Emit(OpCodes.Ldarg_0);
+		cursor.Emit(OpCodes.Ldloc, startOfRoundLoc);
+		cursor.EmitDelegate<Action<GameNetworkManager, StartOfRound>>((self, startOfRound) =>
+		{
+			ES3.Save(SaveKey_FormatVersion, FormatVersion, self.currentSaveFileName);
+			ES3.Save(SaveKey_ParityStepsTaken, startOfRound.gameStats.allStepsTaken, self.currentSaveFileName);
+		});
 	}
 
 	private static void GameNetworkManager_SaveItemsOnShip(ILContext il)
@@ -49,15 +99,21 @@ public class Plugin : BaseUnityPlugin
 			return;
 		}
 
+		// diff:
+		//		...
+		//		GrabbableObject[] array = Object.FindObjectsByType<GrabbableObject>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+		//		if (array == null || array.Length == 0)
+		//		{
+		//	+		MyDelegate(this);
+		//			ES3.DeleteKey("shipGrabbableItemIDs", this.currentSaveFileName);
+		//			...
+
 		cursor.Emit(OpCodes.Ldarg_0);
 		cursor.EmitDelegate<Action<GameNetworkManager>>(self =>
 		{
-			ES3.DeleteKey(SaveKey_FormatVersion, self.currentSaveFileName);
 			ES3.DeleteKey(SaveKey_ItemNames, self.currentSaveFileName);
 			ES3.DeleteKey(SaveKey_ItemHasValue, self.currentSaveFileName);
 			ES3.DeleteKey(SaveKey_ItemHasData, self.currentSaveFileName);
-			ES3.DeleteKey(SaveKey_ItemIDsCopy, self.currentSaveFileName);
-			ES3.DeleteKey(SaveKey_ValueTotal, self.currentSaveFileName);
 		});
 
 		var listLocs = new int[4];
@@ -86,6 +142,13 @@ public class Plugin : BaseUnityPlugin
 			return;
 		}
 
+		// diff:
+		//		...
+		//		ES3.Save<Vector3[]>("shipGrabbableItemPos", positions.ToArray(), this.currentSaveFileName);
+		//	+	MyDelegate(this, ids, values);
+		//		ES3.Save<int[]>("shipGrabbableItemIDs", ids.ToArray(), this.currentSaveFileName);
+		//		...
+
 		cursor.Emit(OpCodes.Ldarg_0);
 		cursor.Emit(OpCodes.Ldloc, idsLoc);
 		cursor.Emit(OpCodes.Ldloc, valuesLoc);
@@ -105,7 +168,7 @@ public class Plugin : BaseUnityPlugin
 
 				if (itemsList.Count < id || string.IsNullOrEmpty(itemsList[id].itemName))
 				{
-					Logger.LogWarning($"Save - No item name found for item id {id}");
+					Logger.LogWarning($"Save | Items | No item name found for item id {id}");
 
 					names[i] = "";
 					hasValue[i] = false;
@@ -139,29 +202,51 @@ public class Plugin : BaseUnityPlugin
 			}
 
 			// Save our modded values
-			ES3.Save(SaveKey_FormatVersion, FormatVersion, self.currentSaveFileName);
 			ES3.Save(SaveKey_ItemNames, names, self.currentSaveFileName);
 			ES3.Save(SaveKey_ItemHasValue, hasValue, self.currentSaveFileName);
 			ES3.Save(SaveKey_ItemHasData, hasData, self.currentSaveFileName);
-			ES3.Save(SaveKey_ItemIDsCopy, ids.ToArray(), self.currentSaveFileName);
-			ES3.Save(SaveKey_ValueTotal, valueTotal, self.currentSaveFileName);
 
-			Logger.LogInfo($"Save - Saved {names.Length} items with a total value of {valueTotal}");
+			Logger.LogInfo($"Save | Items | Saved {names.Length} items with a total value of {valueTotal}");
 		});
 	}
 
-	private void StartOfRound_LoadShipGrabbableItems(On.StartOfRound.orig_LoadShipGrabbableItems orig, StartOfRound self)
+	private void StartOfRound_SetTimeAndPlanetToSavedSettings(On.StartOfRound.orig_SetTimeAndPlanetToSavedSettings orig, StartOfRound self)
 	{
-		if (Config.BackupOnLoad.Value)
+		var currentSaveFileName = GameNetworkManager.Instance.currentSaveFileName;
+
+		if (Config.BackupOnLoad.Value && ES3.FileExists(currentSaveFileName))
 		{
-			Logger.LogInfo("Creating save backup");
-			ES3.CreateBackup(GameNetworkManager.Instance.currentSaveFileName);
+			Logger.LogInfo("Load | General | Creating save backup");
+
+			ES3.CreateBackup(currentSaveFileName);
 		}
 
 		orig(self);
+
+		if (!ES3.KeyExists(SaveKey_FormatVersion, currentSaveFileName))
+		{
+			LoadedFormatVersion = 0;
+			LoadedParityCheck = false;
+
+			Logger.LogWarning($"Load | General | No {PluginInfo.PLUGIN_NAME} save data found, skipping all");
+			return;
+		}
+
+		LoadedFormatVersion = ES3.Load(SaveKey_FormatVersion, currentSaveFileName, FormatVersion);
+		var loadedStepsTaken = ES3.Load(SaveKey_ParityStepsTaken, currentSaveFileName, self.gameStats.allStepsTaken);
+
+		if (loadedStepsTaken != self.gameStats.allStepsTaken)
+		{
+			LoadedParityCheck = false;
+
+			Logger.LogWarning($"Load | General | Steps Taken mismach (Expected {loadedStepsTaken}, got {self.gameStats.allStepsTaken}), likely outdated save, skipping all");
+			return;
+		}
+
+		LoadedParityCheck = true;
 	}
 
-	private static void StartOfRound_LoadShipGrabbableItems_IL(ILContext il)
+	private static void StartOfRound_LoadShipGrabbableItems(ILContext il)
 	{
 		var cursor = new ILCursor(il);
 
@@ -200,6 +285,20 @@ public class Plugin : BaseUnityPlugin
 			return;
 		}
 
+		// diff:
+		//		...
+		//		if (ES3.KeyExists("shipItemSaveData", GameNetworkManager.Instance.currentSaveFileName))
+		//		{
+		//			hasData = true;
+		//			data = ES3.Load<int[]>("shipItemSaveData", GameNetworkManager.Instance.currentSaveFileName);
+		//		}
+		//	+	(int[] newValues, int[] newData) = MyDelegate(this, ids, values, data);
+		//	+	values = newValues;
+		//	+	data = newData;
+		//		int valueIndex = 0;
+		//		int dataIndex = 0;
+		//		...
+
 		cursor.MoveAfterLabels();
 
 		cursor.Emit(OpCodes.Ldarg_0);
@@ -212,31 +311,28 @@ public class Plugin : BaseUnityPlugin
 			{
 				var currentSaveFileName = GameNetworkManager.Instance.currentSaveFileName;
 
-				// Make sure modded values exist
-				if (!ES3.KeyExists(SaveKey_FormatVersion, currentSaveFileName))
+				// Skip if parity check failed
+				if (!LoadedParityCheck)
 				{
-					Logger.LogWarning($"Load - No {PluginInfo.PLUGIN_NAME} save data found, skipping all");
+					return (values, data);
+				}
+
+				// Make sure modded values exist
+				if (!ES3.KeyExists(SaveKey_ItemNames, currentSaveFileName))
+				{
+					Logger.LogWarning($"Load | Items | No item name save data found, skipping item id fixing");
 					return (values, data);
 				}
 
 				// Load values for item id fixing
-				var loadedFormat = ES3.Load<int>(SaveKey_FormatVersion, currentSaveFileName);
-				var loadedNames = ES3.Load<string[]>(SaveKey_ItemNames, currentSaveFileName);
-				var loadedHasValue = ES3.Load<bool[]>(SaveKey_ItemHasValue, currentSaveFileName) ?? new bool[ids.Length];
-				var loadedHasData = ES3.Load<bool[]>(SaveKey_ItemHasData, currentSaveFileName) ?? new bool[ids.Length];
-				var loadedIDs = ES3.Load<int[]>(SaveKey_ItemIDsCopy, currentSaveFileName);
-				var loadedValueTotal = ES3.Load<int>(SaveKey_ValueTotal, currentSaveFileName);
+				var loadedNames = ES3.Load(SaveKey_ItemNames, currentSaveFileName, new string[0]);
+				var loadedHasValue = ES3.Load(SaveKey_ItemHasValue, currentSaveFileName, new bool[ids.Length]);
+				var loadedHasData = ES3.Load(SaveKey_ItemHasData, currentSaveFileName, new bool[ids.Length]);
 
 				// Skip if disabled
 				if (!Config.FixItemIds.Value)
 				{
-					Logger.LogInfo("Load - Item id fixing is disabled, skipping");
-				}
-
-				if (loadedNames == null)
-				{
-					// Probably unreachable but vanilla code checks this so
-					Logger.LogWarning("Load - No item names found, skipping item id fixing");
+					Logger.LogInfo("Load | Items | Item id fixing is disabled, skipping item id fixing");
 					return (values, data);
 				}
 
@@ -250,39 +346,6 @@ public class Plugin : BaseUnityPlugin
 					}
 				}
 
-				// Calculate whether item ids are equal
-				var idsEqual = true;
-				if (loadedIDs != null)
-				{
-					for (var i = 0; i < ids.Length; i++)
-					{
-						if (loadedIDs[i] != ids[i])
-						{
-							idsEqual = false;
-							break;
-						}
-					}
-				}
-
-				// Validate data to make sure there's no gaps in the mod's knowledge
-				if (loadedIDs.Length != ids.Length)
-				{
-					Logger.LogError($"Load - Item count mismatch (Expected {loadedNames.Length}, got {ids.Length}), likely outdated save, skipping item id fixing");
-					return (values, data);
-				}
-
-				if (valueTotal != loadedValueTotal)
-				{
-					Logger.LogError($"Load - Item values mismatch (Expected {loadedValueTotal}, got {valueTotal}), likely outdated save, skipping item id fixing");
-					return (values, data);
-				}
-
-				if (!idsEqual)
-				{
-					Logger.LogError($"Load - Item id mismatch, likely outdated save, skipping item id fixing");
-					return (values, data);
-				}
-
 				// Modify item ids to match their names
 				for (var i = 0; i < ids.Length; i++)
 				{
@@ -291,7 +354,7 @@ public class Plugin : BaseUnityPlugin
 
 					if (string.IsNullOrEmpty(name))
 					{
-						Logger.LogWarning($"Load - Found empty item name for item id {id}, loading normally");
+						Logger.LogWarning($"Load | Items | Found empty item name for item id {id}, loading normally");
 						continue;
 					}
 
@@ -310,7 +373,7 @@ public class Plugin : BaseUnityPlugin
 					{
 						if (!int.TryParse(name.Substring(nameIdIndex + 4), out nameId))
 						{
-							Logger.LogError($"Load - Failed to parse item name {name}");
+							Logger.LogError($"Load | Items | Failed to parse item name {name}");
 						};
 						name = name.Substring(0, nameIdIndex);
 						hasNameId = true;
@@ -333,21 +396,21 @@ public class Plugin : BaseUnityPlugin
 					{
 						if (Config.RemoveIfNotFound.Value)
 						{
-							Logger.LogWarning($"Load - No item id found for item \"{name}\", removing item");
+							Logger.LogWarning($"Load | Items | No item id found for item \"{name}\", removing item");
 
 							ids[i] = int.MaxValue;
 							continue;
 						}
 						else
 						{
-							Logger.LogWarning($"Load - No item id found for item \"{name}\", loading normally with id {id} {asNameSuffix}");
+							Logger.LogWarning($"Load | Items | No item id found for item \"{name}\", loading normally with id {id} {asNameSuffix}");
 							continue;
 						}
 					}
 
 					if (matchingIds.Count <= nameId)
 					{
-						Logger.LogWarning($"Load - Saved {id} as \"{name}\" #{nameId + 1}, but only found {matchingIds.Count} name duplicates, loading as #{matchingIds.Count}");
+						Logger.LogWarning($"Load | Items | Saved {id} as \"{name}\" #{nameId + 1}, but only found {matchingIds.Count} name duplicates, loading as #{matchingIds.Count}");
 						nameId = matchingIds.Count - 1;
 					}
 
@@ -357,12 +420,12 @@ public class Plugin : BaseUnityPlugin
 
 						if (matchingIds.Contains(id))
 						{
-							Logger.LogWarning($"Load - Multiple ids ({idsList}) found for item \"{name}\", loading normally with id {id} {asNameSuffix}");
+							Logger.LogWarning($"Load | Items | Multiple ids ({idsList}) found for item \"{name}\", loading normally with id {id} {asNameSuffix}");
 							continue;
 						}
 						else
 						{
-							Logger.LogWarning($"Load - Multiple ids ({idsList}) found for item \"{name}\", arbitrarily loading {matchingIds[0]}");
+							Logger.LogWarning($"Load | Items | Multiple ids ({idsList}) found for item \"{name}\", arbitrarily loading {matchingIds[0]}");
 						}
 					}
 
@@ -370,11 +433,11 @@ public class Plugin : BaseUnityPlugin
 					{
 						if (id < self.allItemsList.itemsList.Count && id >= 0)
 						{
-							Logger.LogInfo($"Load - Fixed item mismatch ({id}, \"{self.allItemsList.itemsList[id].itemName}\" -> {matchingIds[nameId]}, \"{name}\")");
+							Logger.LogInfo($"Load | Items | Fixed item mismatch ({id}, \"{self.allItemsList.itemsList[id].itemName}\" -> {matchingIds[nameId]}, \"{name}\")");
 						}
 						else
 						{
-							Logger.LogInfo($"Load - Fixed item mismatch ({id}, unknown -> {matchingIds[nameId]}, \"{name}\")");
+							Logger.LogInfo($"Load | Items | Fixed item mismatch ({id}, unknown -> {matchingIds[nameId]}, \"{name}\")");
 						}
 						ids[i] = matchingIds[nameId];
 					}
@@ -410,7 +473,7 @@ public class Plugin : BaseUnityPlugin
 
 								newValueTotal += randomValue;
 
-								Logger.LogWarning($"Load - Assigning random value of {randomValue} to \"{item.itemName}\"");
+								Logger.LogWarning($"Load | Items | Assigning random value of {randomValue} to \"{item.itemName}\"");
 							}
 						}
 
@@ -424,7 +487,7 @@ public class Plugin : BaseUnityPlugin
 							{
 								newData.Add(0);
 
-								Logger.LogWarning($"Load - Loaded item \"{item.itemName}\" without its associated save data");
+								Logger.LogWarning($"Load | Items | Loaded item \"{item.itemName}\" without its associated save data");
 							}
 						}
 					}
@@ -440,19 +503,19 @@ public class Plugin : BaseUnityPlugin
 					}
 				}
 
-				var valueDiffStr = (newValueTotal - loadedValueTotal).ToString();
-				if (newValueTotal > loadedValueTotal)
+				var valueDiffStr = (newValueTotal - valueTotal).ToString();
+				if (newValueTotal > valueTotal)
 				{
 					valueDiffStr = "+" + valueDiffStr;
 				}
 
-				Logger.LogInfo($"Load - Loaded {loadedNames.Length} items with a total value of {newValueTotal} ({valueDiffStr})");
+				Logger.LogInfo($"Load | Items | Loaded {loadedNames.Length} items with a total value of {newValueTotal} ({valueDiffStr})");
 
 				return (newValues.ToArray(), newData.ToArray());
 			}
 			catch (Exception e)
 			{
-				Logger.LogError($"Load - Error occured during load");
+				Logger.LogError($"Load | Items | Error occured during load");
 				Logger.LogError(e);
 
 				return (values, data);

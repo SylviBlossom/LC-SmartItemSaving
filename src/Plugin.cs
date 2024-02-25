@@ -5,6 +5,8 @@ using MonoMod.Cil;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine;
+using static UnityEngine.UIElements.StylePropertyAnimationSystem;
 using Object = UnityEngine.Object;
 
 namespace SmartItemSaving;
@@ -13,7 +15,7 @@ namespace SmartItemSaving;
 public class Plugin : BaseUnityPlugin
 {
 	// Constant variables
-	public const int FormatVersion = 1;
+	public const int FormatVersion = 2;
 
 	public const string SaveKey_FormatVersion = $"{PluginInfo.PLUGIN_GUID}_formatVersion";
 	public const string SaveKey_ParityStepsTaken = $"{PluginInfo.PLUGIN_GUID}_parityStepsTaken";
@@ -21,6 +23,8 @@ public class Plugin : BaseUnityPlugin
 	public const string SaveKey_ItemNames = $"{PluginInfo.PLUGIN_GUID}_itemNames";
 	public const string SaveKey_ItemHasValue = $"{PluginInfo.PLUGIN_GUID}_itemHasValue";
 	public const string SaveKey_ItemHasData = $"{PluginInfo.PLUGIN_GUID}_itemHasData";
+
+	public const string SaveKey_UnlockNames = $"{PluginInfo.PLUGIN_GUID}_unlockNames";
 
 	// Temporary loading variables
 	public static int LoadedFormatVersion = 0;
@@ -39,10 +43,11 @@ public class Plugin : BaseUnityPlugin
 
 		// Saving
 		IL.GameNetworkManager.SaveGameValues += GameNetworkManager_SaveGameValues;
-		IL.GameNetworkManager.SaveItemsInShip += GameNetworkManager_SaveItemsOnShip;
+		IL.GameNetworkManager.SaveItemsInShip += GameNetworkManager_SaveItemsInShip;
 
 		// Loading
 		On.StartOfRound.SetTimeAndPlanetToSavedSettings += StartOfRound_SetTimeAndPlanetToSavedSettings;
+		IL.StartOfRound.LoadUnlockables += StartOfRound_LoadUnlockables;
 		IL.StartOfRound.LoadShipGrabbableItems += StartOfRound_LoadShipGrabbableItems;
 
 		Logger.LogInfo($"Plugin {PluginInfo.PLUGIN_NAME} is loaded!");
@@ -87,9 +92,49 @@ public class Plugin : BaseUnityPlugin
 			ES3.Save(SaveKey_FormatVersion, FormatVersion, self.currentSaveFileName);
 			ES3.Save(SaveKey_ParityStepsTaken, startOfRound.gameStats.allStepsTaken, self.currentSaveFileName);
 		});
+
+		var unlockListLoc = -1;
+
+		if (!cursor.TryGotoNext(MoveType.AfterLabel,
+				instr1 => instr1.MatchLdstr("UnlockedShipObjects"),
+				instr2 => instr2.MatchLdloc(out unlockListLoc)))
+		{
+			Logger.LogError($"Failed IL hook for GameNetworkManager.SaveGameValues @ Save unlocked ship objects list");
+			return;
+		}
+
+		//diff:
+		//		...
+		//		if (unlocks.Count > 0)
+		//		{
+		//	+		MyDelegate(this, unlocks);
+		//			ES3.Save<int[]>("UnlockedShipObjects", unlocks.ToArray(), this.currentSaveFileName);
+		//		}
+		//		ES3.Save<int>("DeadlineTime", (int)Mathf.Clamp(timeOfDay.timeUntilDeadline, 0f, 99999f), this.currentSaveFileName);
+		//		...
+
+		cursor.Emit(OpCodes.Ldarg_0);
+		cursor.Emit(OpCodes.Ldloc, startOfRoundLoc);
+		cursor.Emit(OpCodes.Ldloc, unlockListLoc);
+		cursor.EmitDelegate<Action<GameNetworkManager, StartOfRound, List<int>>>((self, startOfRound, unlocks) =>
+		{
+			// List of unlock names correlating to unlock ids
+			var names = new string[unlocks.Count];
+
+			for (var i = 0; i < unlocks.Count; i++)
+			{
+				// TODO: Resolve name conflicts (troublesome, as potentially conflicting names are already saved)
+				names[i] = startOfRound.unlockablesList.unlockables[unlocks[i]].unlockableName;
+			}
+
+			// Save our modded values
+			ES3.Save(SaveKey_UnlockNames, names, self.currentSaveFileName);
+
+			Logger.LogInfo($"Save | Unlockables | Successfully saved {names.Length} unlocks");
+		});
 	}
 
-	private static void GameNetworkManager_SaveItemsOnShip(ILContext il)
+	private static void GameNetworkManager_SaveItemsInShip(ILContext il)
 	{
 		var cursor = new ILCursor(il);
 
@@ -193,20 +238,12 @@ public class Plugin : BaseUnityPlugin
 				}
 			}
 
-			// Value total (for savedata verification)
-			var valueTotal = 0;
-
-			for (var i = 0; i < values.Count; i++)
-			{
-				valueTotal += values[i];
-			}
-
 			// Save our modded values
 			ES3.Save(SaveKey_ItemNames, names, self.currentSaveFileName);
 			ES3.Save(SaveKey_ItemHasValue, hasValue, self.currentSaveFileName);
 			ES3.Save(SaveKey_ItemHasData, hasData, self.currentSaveFileName);
 
-			Logger.LogInfo($"Save | Items | Saved {names.Length} items with a total value of {valueTotal}");
+			Logger.LogInfo($"Save | Items | Successfully saved {names.Length} items");
 		});
 	}
 
@@ -239,11 +276,169 @@ public class Plugin : BaseUnityPlugin
 		{
 			LoadedParityCheck = false;
 
-			Logger.LogWarning($"Load | General | Steps Taken mismach (Expected {loadedStepsTaken}, got {self.gameStats.allStepsTaken}), likely outdated save, skipping all");
+			Logger.LogWarning($"Load | General | Steps Taken mismatch (Expected {loadedStepsTaken}, got {self.gameStats.allStepsTaken}), likely outdated save, skipping all");
 			return;
 		}
 
 		LoadedParityCheck = true;
+	}
+
+	private void StartOfRound_LoadUnlockables(ILContext il)
+	{
+		var cursor = new ILCursor(il);
+
+		if (!cursor.TryGotoNext(MoveType.After, instr => instr.MatchCallOrCallvirt<ES3>("Load")))
+		{
+			Logger.LogError($"Failed IL hook for StartOfRound.LoadUnlockables @ Load unlocks list");
+			return;
+		}
+
+		//diff:
+		//		if (ES3.KeyExists("UnlockedShipObjects", GameNetworkManager.Instance.currentSaveFileName))
+		//		{
+		//	-		int[] array = ES3.Load<int[]>("UnlockedShipObjects", GameNetworkManager.Instance.currentSaveFileName);
+		//	+		int[] array = MyDelegate(ES3.Load<int[]>("UnlockedShipObjects", GameNetworkManager.Instance.currentSaveFileName), this);
+		//			for (int i = 0; i < array.Length; i++)
+		//			{
+
+		cursor.Emit(OpCodes.Ldarg_0);
+		cursor.EmitDelegate<Func<int[], StartOfRound, int[]>>((unlocks, self) =>
+		{
+			try
+			{
+				var currentSaveFileName = GameNetworkManager.Instance.currentSaveFileName;
+
+				// Skip if parity check failed
+				if (!LoadedParityCheck)
+				{
+					return unlocks;
+				}
+
+				// Skip if disabled
+				if (!Config.FixItemIds.Value)
+				{
+					Logger.LogInfo("Load | Unlockables | FixItemIds is disabled, skipping unlockable id fixing");
+					return unlocks;
+				}
+
+				// Make sure modded values exist
+				if (!ES3.KeyExists(SaveKey_UnlockNames, currentSaveFileName))
+				{
+					Logger.LogWarning($"Load | Unlockables | No unlock name save data found, skipping unlockable id fixing");
+					return unlocks;
+				}
+
+				// Load values for unlock id fixing
+				var loadedNames = ES3.Load(SaveKey_UnlockNames, currentSaveFileName, new string[0]);
+
+				// Make sure our lists are the same size
+				if (loadedNames.Length != unlocks.Length)
+				{
+					Logger.LogError($"Load | Unlockables | Unlocks count mismatch (Expected {loadedNames.Length}, got {unlocks.Length}), likely outdated save, skipping unlockable id fixing");
+					return unlocks;
+				}
+
+				// Fix unlock id mismatches
+				var newUnlocks = new List<int>();
+
+				for (var i = 0; i < loadedNames.Length; i++)
+				{
+					var name = loadedNames[i];
+					var id = unlocks[i];
+
+					if (string.IsNullOrEmpty(name))
+					{
+						Logger.LogWarning($"Load | Unlockables | Found empty unlock name for unlock id {id}, loading normally");
+
+						newUnlocks.Add(id);
+						continue;
+					}
+
+					var asNameSuffix = "";
+					if (self.unlockablesList.unlockables.Count > id && !string.IsNullOrEmpty(self.unlockablesList.unlockables[id].unlockableName))
+					{
+						asNameSuffix = $"as \"{self.unlockablesList.unlockables[id].unlockableName}\"";
+					}
+
+					// Get all unlockable ids whos name matches the saved name
+					var matchingIds = new List<int>();
+
+					for (var j = 0; j < self.unlockablesList.unlockables.Count; j++)
+					{
+						var unlockable = self.unlockablesList.unlockables[j];
+
+						if (unlockable.unlockableName.Equals(name, StringComparison.InvariantCultureIgnoreCase))
+						{
+							matchingIds.Add(j);
+						}
+					}
+
+					// Get the correct unlockable id and add it
+					if (matchingIds.Count == 0)
+					{
+						if (Config.RemoveIfNotFound.Value)
+						{
+							Logger.LogWarning($"Load | Unlockables | No unlock id found for unlock \"{name}\", removing item");
+							continue;
+						}
+						else
+						{
+							Logger.LogWarning($"Load | Unlockables | No unlock id found for unlock \"{name}\", loading normally with id {id} {asNameSuffix}");
+
+							newUnlocks.Add(id);
+							continue;
+						}
+					}
+
+					// TODO: Resolve name conflicts (troublesome, as potentially conflicting names are already saved)
+					if (matchingIds.Count > 1)
+					{
+						var idsList = string.Join(",", matchingIds);
+
+						if (matchingIds.Contains(id))
+						{
+							Logger.LogWarning($"Load | Unlockables | Multiple ids ({idsList}) found for unlock \"{name}\", loading normally with id {id} {asNameSuffix}");
+
+							newUnlocks.Add(id);
+							continue;
+						}
+						else
+						{
+							Logger.LogWarning($"Load | Unlockables | Multiple ids ({idsList}) found for unlock \"{name}\", arbitrarily loading {matchingIds[0]}");
+						}
+					}
+
+					if (id != matchingIds[0])
+					{
+						if (id < self.unlockablesList.unlockables.Count && id >= 0)
+						{
+							Logger.LogInfo($"Load | Unlockables | Fixed unlock mismatch ({id}, \"{self.unlockablesList.unlockables[id].unlockableName}\" -> {matchingIds[0]}, \"{name}\")");
+						}
+						else
+						{
+							Logger.LogInfo($"Load | Unlockables | Fixed unlock mismatch ({id}, unknown -> {matchingIds[0]}, \"{name}\")");
+						}
+
+						newUnlocks.Add(matchingIds[0]);
+						continue;
+					}
+
+					newUnlocks.Add(id);
+				}
+
+				Logger.LogInfo($"Load | Unlockables | Loaded {newUnlocks.Count} unlocks");
+
+				// Return the modified list of unlockables
+				return newUnlocks.ToArray();
+			}
+			catch (Exception e)
+			{
+				Logger.LogError($"Load | Unlocks | Error occured during load");
+				Logger.LogError(e);
+
+				return unlocks;
+			}
+		});
 	}
 
 	private static void StartOfRound_LoadShipGrabbableItems(ILContext il)
@@ -332,7 +527,14 @@ public class Plugin : BaseUnityPlugin
 				// Skip if disabled
 				if (!Config.FixItemIds.Value)
 				{
-					Logger.LogInfo("Load | Items | Item id fixing is disabled, skipping item id fixing");
+					Logger.LogInfo("Load | Items | FixItemIds is disabled, skipping item id fixing");
+					return (values, data);
+				}
+
+				// Make sure our lists are the same size
+				if (loadedNames.Length != ids.Length)
+				{
+					Logger.LogError($"Load | Items | Item count mismatch (Expected {loadedNames.Length}, got {ids.Length}), likely outdated save, skipping item id fixing");
 					return (values, data);
 				}
 

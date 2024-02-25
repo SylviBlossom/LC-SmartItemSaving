@@ -7,10 +7,11 @@ This has not been extensively tested with other mods that modify saves, if you e
 
 ## Current features
 - Prevent corruption of items in ship when items are added/removed by mods
+- Prevent corruption of ship unlockables/furniture too
 - Create backup when save is loaded (only one)
 
 ## Planned features
-- Also prevent corruption of ship unlockables (furniture)
 - Prevent items falling through the floor on load
 - Save item rotation
+- Resolve name conflicts for ship unlockables
 - *Maybe* Increase item save limit to 999 (configurable)

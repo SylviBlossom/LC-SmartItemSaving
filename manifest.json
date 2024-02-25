@@ -1,6 +1,6 @@
 {
     "name": "SmartItemSaving",
-    "version_number": "1.0.1",
+    "version_number": "1.1.0",
     "website_url": "https://github.com/SylviBlossom/LC-SmartItemSaving",
     "description": "Improves how items on the ship save, helping against ID changes",
     "dependencies": [

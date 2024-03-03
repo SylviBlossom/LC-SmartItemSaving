@@ -1,8 +1,8 @@
 {
     "name": "SmartItemSaving",
-    "version_number": "1.1.0",
+    "version_number": "1.2.0",
     "website_url": "https://github.com/SylviBlossom/LC-SmartItemSaving",
-    "description": "Improves how items on the ship save, helping against ID changes",
+    "description": "Improves how items on the ship save, helping against ID changes and properly keeping positions/rotations",
     "dependencies": [
         "BepInEx-BepInExPack-5.4.2100",
         "Evaisa-HookGenPatcher-0.0.5"

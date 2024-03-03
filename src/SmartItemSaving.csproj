@@ -37,6 +37,9 @@
       <Reference Include="MMHOOK_Assembly-CSharp">
         <HintPath>..\lib-stripped\MMHOOK-v49-strip\MMHOOK_Assembly-CSharp.dll</HintPath>
       </Reference>
+      <Reference Include="Unity.Netcode.Runtime">
+        <HintPath>..\lib-stripped\UnityEngine-strip\Unity.Netcode.Runtime.dll</HintPath>
+      </Reference>
     </ItemGroup>
 
     <Target Name="PostBuild" AfterTargets="PostBuildEvent">

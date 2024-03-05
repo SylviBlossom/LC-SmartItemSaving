@@ -1,3 +1,6 @@
+### v1.2.1
+- Attempt to fix inconsistent item syncing issue
+
 ### v1.2.0
 - Add "Fix Item Falling" option, to prevent items from falling through ship furniture on load
 - Add "Save Item Rotation" option, to keep items in the same rotation they were when you saved

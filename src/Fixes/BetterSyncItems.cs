@@ -35,7 +35,7 @@ public static class BetterSyncItems
 		var floorObjects = Object.FindObjectsOfType<GrabbableObject>().Where(IsValidObject).ToArray();
 		var maxSavedObjects = Math.Min(floorObjects.Length, 999);
 
-		using FastBufferWriter stream = new(4 + 32 * maxSavedObjects, Allocator.Temp);
+		using FastBufferWriter stream = new(4 + 4 + 32 * maxSavedObjects, Allocator.Temp, 65536);
 
 		try
 		{

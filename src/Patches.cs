@@ -424,7 +424,7 @@ public class Patches
 
 		if (!cursor.TryGotoNext(MoveType.After, instr => instr.MatchLdcI4(-1)))
 		{
-			Plugin.Logger.LogError($"Failed IL hook for PlayerControllerB.ThrowObjectClientRpc @ Pass -1");
+			Plugin.Logger.LogWarning($"Failed IL hook for PlayerControllerB.ThrowObjectClientRpc @ Pass -1 (Not a big deal)");
 			return;
 		}
 

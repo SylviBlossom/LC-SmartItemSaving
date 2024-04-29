@@ -49,7 +49,7 @@ public static class BetterSyncItems
 
 			Plugin.Logger.LogInfo($"Item rotation sync: Sending packet\n- Buffer size: {stream.Capacity}\n- Bytes written: {stream.Length}\n- Objects synced: {maxSavedObjects}");
 
-			NetworkManager.Singleton.CustomMessagingManager.SendNamedMessage($"{PluginInfo.PLUGIN_GUID}_OnReceiveItemSync", clientId, stream);
+			NetworkManager.Singleton.CustomMessagingManager.SendNamedMessage($"{PluginInfo.PLUGIN_GUID}_OnReceiveItemSync", clientId, stream, NetworkDelivery.ReliableFragmentedSequenced);
 		}
 		catch (Exception e)
 		{

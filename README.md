@@ -19,8 +19,10 @@ If you encounter any problems please report the bug either on discord or [open a
 - *Maybe* Increase item save limit to 999 (configurable)
 
 ## Mod Compatibility
-The following mods or mod config options do the same thing as a feature from this mod, and thus may be incompatible or redundant:
+The following mods or mod config options either have compatibility issues or do the same thing as a feature from this mod:
 
+- [Remnants](https://thunderstore.io/c/lethal-company/p/KawaiiBone/Remnants/)
+  - Completely replaces how item saving works, making it incompatible with this mod and others.
 - [CupboardFix](https://thunderstore.io/c/lethal-company/p/Rocksnotch/CupboardFix/)
   - Does the same thing as this mod's "FixItemFalling" option.
   - Compatibility not tested, but may conflict with this mod's "SaveItemRotation" option.

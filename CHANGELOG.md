@@ -1,3 +1,6 @@
+### v1.2.2
+- Attempt to fix item syncing, again
+
 ### v1.2.1
 - Attempt to fix inconsistent item syncing issue
 

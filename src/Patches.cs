@@ -32,22 +32,21 @@ public class Patches
 	{
 		var cursor = new ILCursor(il);
 
-		var startOfRoundLoc = -1;
+		var unlockListLoc = -1;
 
-		for (var i = 0; i < 3; i++)
+		if (!cursor.TryGotoNext(MoveType.Before,
+				instr1 => instr1.MatchLdstr("UnlockedShipObjects"),
+				instr2 => instr2.MatchLdloc(out unlockListLoc)))
 		{
-			if (!cursor.TryGotoNext(MoveType.After,
-					instr1 => instr1.MatchCallOrCallvirt<Object>("FindObjectOfType"),
-					instr2 => instr2.MatchStloc(out startOfRoundLoc)))
-			{
-				Plugin.Logger.LogError($"Failed IL hook for GameNetworkManager.SaveGameValues @ Get FindObjectOfType local {i}");
-				return;
-			}
+			Plugin.Logger.LogError($"Failed IL hook for GameNetworkManager.SaveGameValues @ Save unlocked ship objects list");
+			return;
 		}
 
-		if (!cursor.TryGotoNext(MoveType.After, instr => instr.MatchBrfalse(out _)))
+		var beforeSaveUnlocksInstr = cursor.Next;
+
+		if (!cursor.TryGotoPrev(MoveType.After, instr => instr.MatchStloc(unlockListLoc)))
 		{
-			Plugin.Logger.LogError($"Failed IL hook for GameNetworkManager.SaveGameValues @ StartOfRound save block");
+			Plugin.Logger.LogError($"Failed IL hook for GameNetworkManager.SaveGameValues @ After initialize unlocks list");
 			return;
 		}
 
@@ -56,23 +55,14 @@ public class Patches
 		//		StartOfRound startOfRound = Object.FindObjectOfType<StartOfRound>();
 		//		if (startOfRound != null)
 		//		{
+		//			...
+		//			List<int> unlocks = new List<int>();
 		//	+		General.SaveInitialValues(this, startOfRound);
 		//			...
 
 		cursor.MoveAfterLabels();
 		cursor.Emit(OpCodes.Ldarg_0);
-		cursor.Emit(OpCodes.Ldloc, startOfRoundLoc);
 		cursor.EmitDelegate(General.SaveInitialValues);
-
-		var unlockListLoc = -1;
-
-		if (!cursor.TryGotoNext(MoveType.AfterLabel,
-				instr1 => instr1.MatchLdstr("UnlockedShipObjects"),
-				instr2 => instr2.MatchLdloc(out unlockListLoc)))
-		{
-			Plugin.Logger.LogError($"Failed IL hook for GameNetworkManager.SaveGameValues @ Save unlocked ship objects list");
-			return;
-		}
 
 		//diff:
 		//		...
@@ -84,8 +74,9 @@ public class Patches
 		//		ES3.Save<int>("DeadlineTime", (int)Mathf.Clamp(timeOfDay.timeUntilDeadline, 0f, 99999f), this.currentSaveFileName);
 		//		...
 
+		cursor.Goto(beforeSaveUnlocksInstr, MoveType.AfterLabel);
+
 		cursor.Emit(OpCodes.Ldarg_0);
-		cursor.Emit(OpCodes.Ldloc, startOfRoundLoc);
 		cursor.Emit(OpCodes.Ldloc, unlockListLoc);
 		cursor.EmitDelegate(FixUnlockIds.SaveFixUnlockIds);
 	}

@@ -6,10 +6,10 @@ public static class General
 	public static int LoadedFormatVersion = 0;
 	public static bool LoadedParityCheck = false;
 
-	public static void SaveInitialValues(GameNetworkManager gameNetworkManager, StartOfRound startOfRound)
+	public static void SaveInitialValues(GameNetworkManager gameNetworkManager)
 	{
 		ES3.Save(SaveKeys.FormatVersion, Plugin.FormatVersion, gameNetworkManager.currentSaveFileName);
-		ES3.Save(SaveKeys.ParityStepsTaken, startOfRound.gameStats.allStepsTaken, gameNetworkManager.currentSaveFileName);
+		ES3.Save(SaveKeys.ParityStepsTaken, StartOfRound.Instance.gameStats.allStepsTaken, gameNetworkManager.currentSaveFileName);
 	}
 
 	public static void LoadInitialValues(StartOfRound startOfRound)

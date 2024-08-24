@@ -5,7 +5,7 @@ namespace SmartItemSaving.Fixes;
 
 public static class FixUnlockIds
 {
-	public static void SaveFixUnlockIds(GameNetworkManager gameNetworkManager, StartOfRound startOfRound, List<int> unlocks)
+	public static void SaveFixUnlockIds(GameNetworkManager gameNetworkManager, List<int> unlocks)
 	{
 		// List of unlock names correlating to unlock ids
 		var names = new string[unlocks.Count];
@@ -13,7 +13,7 @@ public static class FixUnlockIds
 		for (var i = 0; i < unlocks.Count; i++)
 		{
 			// TODO: Resolve name conflicts (troublesome, as potentially conflicting names are already saved)
-			names[i] = startOfRound.unlockablesList.unlockables[unlocks[i]].unlockableName;
+			names[i] = StartOfRound.Instance.unlockablesList.unlockables[unlocks[i]].unlockableName;
 		}
 
 		// Save our modded values

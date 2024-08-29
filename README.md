@@ -7,7 +7,7 @@ For fixing items falling through the floor and item rotation saving, all clients
 
 If you encounter any problems please report the bug either to **sylviblossom** on the Lethal Company Modding discord or [open an issue](https://github.com/SylviBlossom/LC-SmartItemSaving/issues/new).
 
-See also [SaveItemRotations](https://thunderstore.io/c/lethal-company/p/SylviBlossom/PredictableEggs/) for just the item rotation saving feature of this mod.
+See also [SaveItemRotations](https://thunderstore.io/c/lethal-company/p/SylviBlossom/SaveItemRotations/) for just the item rotation saving feature of this mod.
 
 ### Current features
 - Prevent corruption of items in ship when items are added/removed by mods

@@ -5,7 +5,9 @@ Improves how items save, attempting to prevent updating/removing/adding mods fro
 
 For fixing items falling through the floor and item rotation saving, all clients must have the mod for them to appear the same when joining.
 
-If you encounter any problems please report the bug either on discord or [open an issue](https://github.com/SylviBlossom/LC-SmartItemSaving/issues/new).
+If you encounter any problems please report the bug either to **sylviblossom** on the Lethal Company Modding discord or [open an issue](https://github.com/SylviBlossom/LC-SmartItemSaving/issues/new).
+
+See also [SaveItemRotations](https://thunderstore.io/c/lethal-company/p/SylviBlossom/PredictableEggs/) for just the item rotation saving feature of this mod.
 
 ### Current features
 - Prevent corruption of items in ship when items are added/removed by mods
@@ -19,17 +21,59 @@ If you encounter any problems please report the bug either on discord or [open a
 - *Maybe* Increase item save limit to 999 (configurable)
 
 ## Mod Compatibility
-The following mods or mod config options either have compatibility issues or do the same thing as a feature from this mod:
 
-- [Remnants](https://thunderstore.io/c/lethal-company/p/KawaiiBone/Remnants/)
-  - Completely replaces how item saving works, making it incompatible with this mod and others.
-- [CupboardFix](https://thunderstore.io/c/lethal-company/p/Rocksnotch/CupboardFix/)
-  - Does the same thing as this mod's "FixItemFalling" option.
-  - Compatibility not tested, but may conflict with this mod's "SaveItemRotation" option.
-- [GeneralImprovements's](https://thunderstore.io/c/lethal-company/p/ShaosilGaming/GeneralImprovements/) `FixItemsFallingThrough` option
-  - Does the same thing as this mod's "FixItemFalling" option.
-  - Compatibility not tested, but should be fine.
-- [LethalLib's](https://thunderstore.io/c/lethal-company/p/Evaisa/LethalLib/) `EnableItemSaveFix` option
-  - Does a similar thing as this mod's "FixItemIds" option.
-  - Compatible, but redundant.
-  - May cause save corruption?
+### Compatible
+The following mods share a feature of this mod and have been tested to be compatible:
+
+- <details>
+  <summary>LethalLevelLoader</summary>
+
+  - Contains a similar item ID fixing system which has additional checks with items registered for LethalLevelLoader itself.
+  - This mod disables its own item ID fixing when LethalLevelLoader is detected, unless `ForceHandleFixItemIds` is enabled.
+</details>
+
+- <details>
+  <summary>SaveItemRotations</summary>
+
+  - A separate smaller mod by me which includes just the system for saving item rotations and syncing them.
+  - This mod disables its own item rotation saving when SaveItemRotations is detected, unless `ForceHandleSaveItemRotation` is enabled.
+</details>
+
+### Incompatible
+The following mods are known to conflict with a feature of this mod:
+
+- <details>
+  <summary>Remnants</summary>
+
+  - Completely replaces how item saving works, making it incompatible with this mod's item ID fixing and potentially other features.
+</details>
+
+### Unknown Compatibility
+The following mods or mod config options may conflict with a feature of this mod:
+
+- <details>
+  <summary>CupboardFix</summary>
+
+  - Does the same thing as this mod's `FixItemFalling` option.
+  - Compatibility not tested, but may conflict with this mod's `SaveItemRotation` option.
+</details>
+
+- <details>
+  <summary>GeneralImprovements (config options)</summary>
+
+  - `FixItemsFallingThrough` option
+    - Does the same thing as this mod's `FixItemFalling` option.
+    - Compatibility not tested, but should be fine.
+  - `FixItemsLoadingSameRotation` option
+    - Does the same thing as this mod's `SaveItemRotation` option.
+    - Compatibility not tested, but should be fine.
+</details>
+
+- <details>
+  <summary>LethalLib (config options)</summary>
+
+  - `EnableItemSaveFix` option
+    - Does a similar thing as this mod's `FixItemIds` option.
+    - Compatible, but redundant.
+    - May cause save corruption?
+</details>

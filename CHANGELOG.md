@@ -1,3 +1,7 @@
+## v1.2.4
+- Add explicit compatibility with LethalLevelLoader by disabling this mod's item ID fixing if it's detected
+- Add explicit compatibility with SaveItemRotations by disabling this mod's item rotation saving if it's detected
+
 ## v1.2.3
 - Fix compatibility with LethalPerformance
 

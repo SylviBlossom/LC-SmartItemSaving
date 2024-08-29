@@ -84,6 +84,13 @@ public static class FixItemIds
 			return;
 		}
 
+		// Skip if LethalLevelLoader is active
+		if (Compatibility.HasLethalLevelLoader(out var pluginInfo) && !Config.ForceHandleFixItemIds.Value)
+		{
+			Plugin.Logger.LogInfo($"Load | Items | Found mod {pluginInfo.Metadata.Name} v{pluginInfo.Metadata.Version}, skipping item id fixing");
+			return;
+		}
+
 		// Make sure our lists are the same size
 		if (loadedNames.Length != ids.Length)
 		{

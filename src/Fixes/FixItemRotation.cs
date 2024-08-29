@@ -53,6 +53,13 @@ public static class FixItemRotation
 			return;
 		}
 
+		// Skip if SaveItemRotations mod is active
+		if (Compatibility.HasSaveItemRotations(out var pluginInfo) && !Config.ForceHandleSaveItemRotation.Value)
+		{
+			Plugin.Logger.LogInfo($"Load | Items | Found mod {pluginInfo.Metadata.Name} v{pluginInfo.Metadata.Version}, skipping load item rotation");
+			return;
+		}
+
 		// Make sure modded values exist
 		if (!ES3.KeyExists(SaveKeys.ItemRotations, currentSaveFileName))
 		{
